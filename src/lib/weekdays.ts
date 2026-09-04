@@ -1,5 +1,7 @@
 import type { Weekday } from "@/generated/prisma/enums";
 
+import { inAppZone } from "@/lib/date";
+
 /**
  * Weekday constants, in a module with no database imports.
  *
@@ -29,7 +31,14 @@ export const WEEKDAY_LABELS: Record<Weekday, string> = {
   SUNDAY: "Sunday",
 };
 
+/**
+ * The weekday an instant falls on, on the app's calendar.
+ *
+ * This drives the "today" highlight in the timetable, so it has to be read in
+ * the student's zone: at 01:30 IST on a Friday a UTC host still reads Thursday
+ * and would highlight the wrong row.
+ */
 export function weekdayFor(date: Date): Weekday {
   // getDay(): 0 = Sunday. WEEKDAY_ORDER starts at Monday.
-  return WEEKDAY_ORDER[(date.getDay() + 6) % 7];
+  return WEEKDAY_ORDER[(inAppZone(date).getDay() + 6) % 7];
 }

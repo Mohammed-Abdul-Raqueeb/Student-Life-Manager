@@ -1,5 +1,6 @@
 "use client";
 
+import { addDays, set } from "date-fns";
 import { Pencil, Plus } from "lucide-react";
 import type { ReactNode } from "react";
 
@@ -16,7 +17,7 @@ import { FormDialog } from "@/components/shared/form-dialog";
 import { FieldRow, FormField } from "@/components/shared/form-field";
 import { Button } from "@/components/ui/button";
 import type { ExamType } from "@/generated/prisma/enums";
-import { formatDateInput, formatTimeInput } from "@/lib/date";
+import { formatDateInput, formatTimeInput, inAppZone } from "@/lib/date";
 import type { SubjectRef } from "@/lib/db/queries";
 
 export type ExamFormValues = {
@@ -214,8 +215,12 @@ export function ExamFormDialog({
 
 /** New exams default to 9:00 am a week out. */
 function defaultExamDate(): Date {
-  const date = new Date();
-  date.setDate(date.getDate() + 7);
-  date.setHours(9, 0, 0, 0);
-  return date;
+  const nextWeek = addDays(inAppZone(new Date()), 7);
+  const at9am = set(nextWeek, {
+    hours: 9,
+    minutes: 0,
+    seconds: 0,
+    milliseconds: 0,
+  });
+  return new Date(at9am.getTime());
 }

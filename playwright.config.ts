@@ -26,11 +26,40 @@ export default defineConfig({
   },
 
   projects: [
-    { name: "chromium", use: { ...devices["Desktop Chrome"] } },
+    // Signs in once as the seeded student and saves the cookie.
+    { name: "setup", testMatch: /auth.setup.ts/ },
+
+    {
+      // The academic features, driven as a signed-in student. They are about
+      // subjects and attendance, not about logging in, so they reuse one
+      // session rather than each establishing their own.
+      name: "app",
+      testMatch: /crud.spec.ts/,
+      dependencies: ["setup"],
+      use: {
+        ...devices["Desktop Chrome"],
+        storageState: "e2e/.auth/student.json",
+      },
+    },
+
+    {
+      // Authentication and isolation start signed out on purpose: each test
+      // creates the accounts it needs, because *who is signed in* is precisely
+      // what these assert.
+      name: "auth",
+      testMatch: /(auth|isolation).spec.ts/,
+      use: { ...devices["Desktop Chrome"] },
+    },
   ],
 
   webServer: {
     command: `next start --port ${PORT}`,
+    env: {
+      // The suite runs on its own port; without this the auth library warns
+      // that it cannot determine its own origin and falls back to guessing
+      // from each request.
+      BETTER_AUTH_URL: baseURL,
+    },
     url: baseURL,
     reuseExistingServer: true,
     timeout: 120_000,

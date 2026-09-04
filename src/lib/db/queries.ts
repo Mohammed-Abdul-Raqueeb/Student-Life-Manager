@@ -1,5 +1,7 @@
 import "server-only";
 
+import { addDays } from "date-fns";
+
 import { cache } from "react";
 
 import type {
@@ -37,7 +39,7 @@ import {
   type DayTotal,
   type WeeklyTrendPoint,
 } from "@/lib/calculations/study";
-import { clockToMinutes, dayRange, weekRange } from "@/lib/date";
+import { clockToMinutes, dayRange, inAppZone, weekRange } from "@/lib/date";
 import { WEEKDAY_ORDER, weekdayFor } from "@/lib/weekdays";
 import { prisma } from "@/lib/db/prisma";
 import { getCurrentUser, type CurrentUser } from "@/lib/db/user";
@@ -670,8 +672,11 @@ export async function getStudyOverview(
   const today = dayRange(now);
 
   // The trend chart needs six weeks; everything else is a slice of that window.
-  const trendStart = new Date(week.start);
-  trendStart.setDate(trendStart.getDate() - (TREND_WEEKS - 1) * 7);
+  // Stepped as civil days in the app's zone so the window opens at the student's
+  // midnight rather than the host's.
+  const trendStart = new Date(
+    addDays(inAppZone(week.start), -(TREND_WEEKS - 1) * 7).getTime(),
+  );
 
   const [subjects, windowSessions, recentSessions, allTime] = await Promise.all([
     prisma.subject.findMany({

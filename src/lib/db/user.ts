@@ -1,25 +1,33 @@
+import "server-only";
+
+import { headers } from "next/headers";
+import { redirect } from "next/navigation";
 import { cache } from "react";
 
-import { prisma } from "@/lib/db/prisma";
 import {
   DEFAULT_GRADING_SCALE,
   parseGradingScale,
   type GradeBand,
 } from "@/lib/calculations/marks";
+import { auth } from "@/lib/auth/server";
+import { prisma } from "@/lib/db/prisma";
 import type { ThemePreference } from "@/generated/prisma/enums";
 
 /**
- * Who "I" am.
+ * Who "I" am — the authorization boundary for the whole application.
  *
- * This release is deliberately single-user: there is no login, so the app
- * resolves the one student row in the database (creating it on first run). Every
- * query and mutation still goes through this function and scopes on the id it
- * returns, so adding real authentication later means changing this file — not
- * the twenty callers that depend on it.
+ * Every query in `src/lib/db/queries.ts` and every mutation in `src/actions`
+ * scopes on the id this returns, and that id comes from a signed session cookie
+ * the server verifies against a session row. Nothing here reads a user id from
+ * a URL, a form field, a header or a request body, so there is no id for a
+ * caller to tamper with: a request either carries a valid session or it gets
+ * nothing.
+ *
+ * That is why hiding the navigation is not the security model. A hand-crafted
+ * POST to a server action reaches this same function, gets the same
+ * session-derived id, and its `where` clause therefore cannot match another
+ * student's rows.
  */
-
-const DEFAULT_STUDENT_EMAIL = "student@studentlife.local";
-const DEFAULT_STUDENT_NAME = "Student";
 
 export type CurrentUser = {
   id: string;
@@ -37,68 +45,95 @@ export type CurrentUser = {
 };
 
 /**
- * Cached per request, so a page that needs the student in six components still
- * makes one query.
+ * The session behind the current request, or null.
+ *
+ * Cached per request, so a page that checks the session in six places still
+ * verifies it once.
  */
-export const getCurrentUser = cache(async (): Promise<CurrentUser> => {
-  const existing = await prisma.user.findFirst({
-    orderBy: { createdAt: "asc" },
-    include: { settings: true },
-  });
-
-  if (existing?.settings) {
-    return toCurrentUser(existing, existing.settings);
-  }
-
-  // First run (or a user row whose settings were never created).
-  const user =
-    existing ??
-    (await prisma.user.upsert({
-      where: { email: DEFAULT_STUDENT_EMAIL },
-      update: {},
-      create: { email: DEFAULT_STUDENT_EMAIL, name: DEFAULT_STUDENT_NAME },
-    }));
-
-  const settings = await prisma.userSettings.upsert({
-    where: { userId: user.id },
-    update: {},
-    create: {
-      userId: user.id,
-      gradingScale: DEFAULT_GRADING_SCALE,
-    },
-  });
-
-  return toCurrentUser(user, settings);
+export const getSession = cache(async () => {
+  return auth.api.getSession({ headers: await headers() });
 });
 
-export async function getCurrentUserId(): Promise<string> {
-  return (await getCurrentUser()).id;
+/**
+ * The signed-in student, or null when the request carries no valid session.
+ *
+ * Use this only where "signed out" is a legitimate outcome — the login and
+ * signup pages, and the shell choosing which navigation to render. Data access
+ * uses {@link requireUser}, which cannot return null.
+ */
+export const getCurrentUserOrNull = cache(
+  async (): Promise<CurrentUser | null> => {
+    const session = await getSession();
+    if (!session?.user?.id) return null;
+
+    const user = await prisma.user.findUnique({
+      where: { id: session.user.id },
+      // Named columns, not a whole row: the password hash lives on Account, and
+      // selecting explicitly means a field added later cannot leak into a
+      // payload by accident.
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        settings: {
+          select: {
+            collegeName: true,
+            program: true,
+            semester: true,
+            attendanceTargetPercent: true,
+            weeklyStudyGoalMinutes: true,
+            gradingScale: true,
+            theme: true,
+          },
+        },
+      },
+    });
+
+    // The session referenced a user who no longer exists — a deleted account
+    // whose cookie is still in the wild. Treat it as signed out.
+    if (!user) return null;
+
+    // Settings are created in the same transaction as the user, so this is a
+    // repair path for rows that predate authentication, not a routine one.
+    const settings =
+      user.settings ??
+      (await prisma.userSettings.create({
+        data: { userId: user.id, gradingScale: DEFAULT_GRADING_SCALE },
+      }));
+
+    return {
+      id: user.id,
+      name: user.name,
+      email: user.email,
+      settings: {
+        collegeName: settings.collegeName,
+        program: settings.program,
+        semester: settings.semester,
+        attendanceTargetPercent: settings.attendanceTargetPercent,
+        weeklyStudyGoalMinutes: settings.weeklyStudyGoalMinutes,
+        gradingScale: parseGradingScale(settings.gradingScale),
+        theme: settings.theme,
+      },
+    };
+  },
+);
+
+/**
+ * The signed-in student, or a redirect to the login page.
+ *
+ * This is what the data layer uses. It never returns null, so a query cannot
+ * accidentally run unscoped: there is no "no user" branch for a caller to
+ * forget, and the type system will not let one be written.
+ */
+export async function requireUser(): Promise<CurrentUser> {
+  const user = await getCurrentUserOrNull();
+  if (!user) redirect("/login");
+  return user;
 }
 
-type UserRow = { id: string; name: string; email: string };
-type SettingsRow = {
-  collegeName: string | null;
-  program: string | null;
-  semester: string | null;
-  attendanceTargetPercent: number;
-  weeklyStudyGoalMinutes: number;
-  gradingScale: unknown;
-  theme: ThemePreference;
-};
+/** The name the twenty existing call sites already use. */
+export const getCurrentUser = requireUser;
 
-function toCurrentUser(user: UserRow, settings: SettingsRow): CurrentUser {
-  return {
-    id: user.id,
-    name: user.name,
-    email: user.email,
-    settings: {
-      collegeName: settings.collegeName,
-      program: settings.program,
-      semester: settings.semester,
-      attendanceTargetPercent: settings.attendanceTargetPercent,
-      weeklyStudyGoalMinutes: settings.weeklyStudyGoalMinutes,
-      gradingScale: parseGradingScale(settings.gradingScale),
-      theme: settings.theme,
-    },
-  };
+export async function getCurrentUserId(): Promise<string> {
+  return (await requireUser()).id;
 }

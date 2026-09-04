@@ -1,4 +1,4 @@
-# Student Life Manager
+# Campivo
 
 A personal academic dashboard: subjects, assignments, exams, timetable,
 attendance, notes, marks and study progress in one place, backed by PostgreSQL.
@@ -29,14 +29,23 @@ npm run db:seed               # loads a term of realistic demo data
 npm run dev                   # http://localhost:3000
 ```
 
+The seed creates a demo student you can log straight in as:
+
+```
+student@campivo.local / campivo-demo-1234
+```
+
+Or create your own account at `/signup` — it starts empty.
+
 `npm run db:dev` prints a connection string like
 `postgres://postgres:postgres@localhost:51214/template1`. Copy it into `.env`
 with the database name changed to `studentlife`:
 
 ```
 DATABASE_URL="postgres://postgres:postgres@localhost:51214/studentlife?sslmode=disable"
-TZ="Asia/Kolkata"
 ```
+
+That is the only variable the app needs.
 
 Any PostgreSQL 14+ server works just as well — a local install, a container, or
 a Neon branch. **If you already have Postgres running, point `DATABASE_URL` at
@@ -68,9 +77,10 @@ pool of 5 applies.
 ## Deploying to Vercel
 
 1. Create a Neon project and copy the **pooled** connection string.
-2. Set `DATABASE_URL` to it, and `TZ` to the student's timezone — serverless
-   hosts default to UTC, and every "today" and "days remaining" figure in the
-   app is evaluated in the server's zone.
+2. Set `DATABASE_URL` to it, plus `BETTER_AUTH_SECRET` and `BETTER_AUTH_URL`
+   (see [Authentication](#authentication)). Do **not** try to set `TZ` — Vercel
+   reserves it, which is why the zone is pinned in code (see
+   [Timezone](#timezone)).
 3. Deploy. `npm run build` runs `prisma generate` first, and `postinstall`
    regenerates the client on the build machine.
 4. Apply migrations once with `npm run db:deploy` (from CI or a dev machine
@@ -78,6 +88,101 @@ pool of 5 applies.
 
 No secret is hardcoded anywhere; `.env` is gitignored and `.env.example`
 documents every variable.
+
+---
+
+## Authentication
+
+Email and password, with database-backed sessions.
+[`better-auth`](https://better-auth.com) handles the credential and session
+mechanics; the app owns the pages, the validation and the authorization.
+
+**Sign up** creates the user, hashes the password with scrypt, and creates the
+student's `UserSettings` in the same transaction — an account can never exist in
+a half-built state. **Log in** and **log out** are server actions, so the
+password never enters client state and the redirect is the server's decision.
+Logging out deletes the session *row*, which is what makes it real: the cookie
+stops resolving everywhere at once, not just in the browser that dropped it.
+
+### Where authorization actually happens
+
+Not in the navigation. There are three independent layers, and only the last
+two are load-bearing:
+
+1. `src/proxy.ts` turns away requests with no session cookie. It is a cheap
+   check that saves a render — it does not verify the cookie, and a forged one
+   gets past it.
+2. `src/app/(app)/layout.tsx` calls `requireUser()`, which verifies the session
+   against the database. One call covers every page beneath it.
+3. **Every query and every mutation** scopes on the id from that verified
+   session. `getCurrentUser()` in [`src/lib/db/user.ts`](src/lib/db/user.ts) is
+   the only source of a user id in the entire app — no id is ever read from a
+   URL, a form field or a request body, so there is none to tamper with.
+
+That third layer is the one that matters. A request carrying another student's
+subject id reaches the same `where: { id, userId }` clause and matches nothing,
+whether it came from a link, a crafted POST, or a script. `e2e/isolation.spec.ts`
+asserts this by having one account drive the app with another's ids rather than
+by checking that a link is hidden.
+
+### Existing data
+
+Campivo ran single-user before it had login: one `User` row owned everything,
+and had no password because nothing needed one. That row is untouched by the
+migration and still owns its data — it simply has no way to sign in.
+
+`npm run auth:claim` attaches credentials to it in place:
+
+```bash
+npm run auth:claim -- --list          # show the user rows and what each owns
+npm run auth:claim -- --user <id> --email you@example.com --password '<pw>'
+```
+
+Nothing is created, reassigned or deleted; it sets an email and writes one
+`Account` row, so every record already pointing at that user id keeps pointing
+at it. The alternative — signing up fresh and repointing the old rows — would
+rewrite a foreign key on every row in the database to reach the same place.
+
+### Environment
+
+| Variable | Required | Notes |
+| --- | --- | --- |
+| `BETTER_AUTH_SECRET` | production | Signs session cookies; at least 32 characters and identical across instances. The app refuses to boot without it rather than falling back to a per-cold-start value that would log people out at random. `openssl rand -base64 32` |
+| `BETTER_AUTH_URL` | recommended | The canonical origin, e.g. `https://campivo.vercel.app`. Also decides whether cookies are `Secure` — that follows the URL scheme, not `NODE_ENV`, because `next start` is a production build served over plain http and browsers reject `__Secure-` cookies there. |
+
+---
+
+## Timezone
+
+The app's calendar is **Asia/Kolkata**, pinned in code as `APP_TIME_ZONE` in
+[`src/lib/date.ts`](src/lib/date.ts). Nothing needs configuring, and there is
+deliberately no environment variable for it.
+
+The usual way to do this is the `TZ` variable, but Vercel reserves `TZ` and
+will not accept it, so a deployed serverless function runs on UTC. That matters
+more than it sounds: between 18:30 UTC and midnight UTC it is already *tomorrow*
+in India, so for five and a half hours every single day a UTC host would put
+"Today", every countdown, every overdue badge and the timetable's current-day
+highlight one day behind what the student sees on their own clock.
+
+So the zone lives in the application instead. Instants — `dueDate`, `examDate`,
+`startedAt` — are stored as real timestamps and never rewritten, because a point
+in time is the same number everywhere. What is zoned is the *reading* of an
+instant as a calendar day, and every one of those routes through `inAppZone()`.
+The upshot is that correctness no longer depends on how the process was
+launched: a laptop in any zone, CI, and production all agree on what day it is.
+
+The unit suite runs under `TZ=UTC` — production's clock, not the developer's —
+so a regression fails on the machine that can still fix it. To check the app
+really is host-independent, run it under a few hostile zones:
+
+```bash
+VITEST_TZ=Pacific/Kiritimati npx vitest run   # UTC+14
+VITEST_TZ=America/Los_Angeles npx vitest run  # UTC-7
+VITEST_TZ=Australia/Eucla npx vitest run      # UTC+8:45
+```
+
+To move the app to another zone, change that one constant.
 
 ---
 
@@ -141,13 +246,14 @@ by dividing first:
 pair up to 40 classes against six targets and asserts both that the answer works
 and that one fewer (or one more) does not.
 
-### Timezone
+### Two kinds of date
 
 Instants (`dueDate`, `examDate`, `startedAt`) are timestamps; calendar dates
 (attendance, assessment dates) are `date` columns that Prisma returns at UTC
-midnight. `src/lib/date.ts` is the only place that knows the difference. All
-formatting happens on the server and reaches client components as strings, so
-there is no clock to disagree about at hydration time.
+midnight. `src/lib/date.ts` is the only place that knows the difference, and the
+only place that knows which zone the calendar runs on — see
+[Timezone](#timezone). All formatting happens on the server and reaches client
+components as strings, so there is no clock to disagree about at hydration time.
 
 ### Single user, multi-user shaped
 
@@ -163,6 +269,7 @@ means changing that one file — not the callers, and not the schema.
 | Command | What it does |
 | --- | --- |
 | `npm run dev` | Development server |
+| `npm run auth:claim` | Attach a login to an existing user row (see [Authentication](#authentication)) |
 | `npm run build` | `prisma generate` then a production build |
 | `npm start` | Serve the production build |
 | `npm run typecheck` | Route typegen + `tsc --noEmit` |

@@ -1,5 +1,6 @@
 "use client";
 
+import { addDays, set } from "date-fns";
 import { Pencil, Plus } from "lucide-react";
 import type { ReactNode } from "react";
 
@@ -18,7 +19,7 @@ import { FormDialog } from "@/components/shared/form-dialog";
 import { FieldRow, FormField } from "@/components/shared/form-field";
 import { Button } from "@/components/ui/button";
 import type { AssignmentStatus, Priority } from "@/generated/prisma/enums";
-import { formatDateInput, formatTimeInput } from "@/lib/date";
+import { formatDateInput, formatTimeInput, inAppZone } from "@/lib/date";
 import type { SubjectRef } from "@/lib/db/queries";
 import { subjectColor } from "@/lib/subject-colors";
 import { cn } from "@/lib/utils";
@@ -236,8 +237,12 @@ export function AssignmentFormDialog({
 
 /** New assignments default to 11:59 pm tomorrow — the most common real answer. */
 function defaultDueDate(): Date {
-  const date = new Date();
-  date.setDate(date.getDate() + 1);
-  date.setHours(23, 59, 0, 0);
-  return date;
+  const tomorrow = addDays(inAppZone(new Date()), 1);
+  const due = set(tomorrow, {
+    hours: 23,
+    minutes: 59,
+    seconds: 0,
+    milliseconds: 0,
+  });
+  return new Date(due.getTime());
 }

@@ -1,11 +1,10 @@
 import type { Metadata, Viewport } from "next";
 import { Geist } from "next/font/google";
 
-import { AppShell } from "@/components/layout/app-shell";
 import { ThemeProvider } from "@/components/layout/theme-provider";
 import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
-import { getCurrentUser } from "@/lib/db/user";
+import { getCurrentUserOrNull } from "@/lib/db/user";
 import { cn } from "@/lib/utils";
 
 import "./globals.css";
@@ -14,12 +13,12 @@ const geist = Geist({ subsets: ["latin"], variable: "--font-sans" });
 
 export const metadata: Metadata = {
   title: {
-    default: "Student Life Manager",
-    template: "%s · Student Life",
+    default: "Campivo",
+    template: "%s · Campivo",
   },
   description:
     "One place for your subjects, assignments, exams, timetable, attendance, marks and study progress.",
-  applicationName: "Student Life Manager",
+  applicationName: "Campivo",
 };
 
 /**
@@ -40,10 +39,20 @@ export const viewport: Viewport = {
   ],
 };
 
+/**
+ * The document and the providers, and nothing else.
+ *
+ * The application frame lives in `(app)/layout.tsx`, which is also where the
+ * session is required. Keeping that out of here is what lets `/login` and
+ * `/signup` render at all: a redirect-on-missing-session in the root layout
+ * would fire on the login page too and loop forever.
+ *
+ * The session is still *read* here, without requiring one, so a signed-in
+ * student's saved theme applies to the very first paint rather than flashing
+ * the default and correcting itself.
+ */
 export default async function RootLayout({ children }: LayoutProps<"/">) {
-  // Resolving the student here means the shell can show their name and program
-  // without every page having to pass it down.
-  const user = await getCurrentUser();
+  const user = await getCurrentUserOrNull();
 
   return (
     <html
@@ -54,13 +63,11 @@ export default async function RootLayout({ children }: LayoutProps<"/">) {
       <body>
         <ThemeProvider
           attribute="class"
-          defaultTheme={user.settings.theme.toLowerCase()}
+          defaultTheme={(user?.settings.theme ?? "SYSTEM").toLowerCase()}
           enableSystem
           disableTransitionOnChange
         >
-          <TooltipProvider delayDuration={200}>
-            <AppShell user={user}>{children}</AppShell>
-          </TooltipProvider>
+          <TooltipProvider delayDuration={200}>{children}</TooltipProvider>
           <Toaster position="top-center" richColors closeButton />
         </ThemeProvider>
       </body>

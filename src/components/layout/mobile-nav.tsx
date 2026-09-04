@@ -44,7 +44,7 @@ export function MobileNavDrawer({ studentName }: { studentName: string }) {
             <span className="bg-primary text-primary-foreground grid size-7 place-items-center rounded-md">
               <Brand className="size-4" aria-hidden />
             </span>
-            Student Life
+            Campivo
           </SheetTitle>
           <SheetDescription>{studentName}</SheetDescription>
         </SheetHeader>

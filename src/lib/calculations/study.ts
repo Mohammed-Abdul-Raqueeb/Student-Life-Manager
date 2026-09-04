@@ -1,11 +1,16 @@
-import { differenceInCalendarDays } from "date-fns";
+import { addDays, format, startOfDay } from "date-fns";
 
-import { WEEK_STARTS_ON } from "@/lib/date";
+import { calendarDaysBetween, inAppZone, weekRange } from "@/lib/date";
 
 /**
  * Study-session maths. Durations are derived from the two stored instants, which
  * means a session from 23:30 to 00:45 is simply 75 minutes — no special case
  * for crossing midnight.
+ *
+ * Durations are pure instant arithmetic and so need no timezone. Grouping is a
+ * different matter: which day or week a session lands in is a calendar question,
+ * and every one of those here is answered on the app's calendar rather than the
+ * host's. See `src/lib/date.ts`.
  */
 
 export type StudySessionLike = {
@@ -25,14 +30,12 @@ export function totalMinutes(sessions: readonly StudySessionLike[]): number {
 }
 
 export type DayTotal = {
-  /** Local calendar date the session started on. */
+  /** Midnight, on the app's calendar, of the day the session started. */
   date: Date;
   /** Short weekday label, e.g. "Mon". */
   label: string;
   minutes: number;
 };
-
-const WEEKDAY_LABELS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
 /**
  * Minutes per day across the seven days beginning at `weekStart`. Always returns
@@ -42,15 +45,21 @@ export function minutesByDay(
   sessions: readonly (StudySessionLike & { startedAt: Date })[],
   weekStart: Date,
 ): DayTotal[] {
+  // Step civil days from the zone's midnight. Stepping with setDate/setHours
+  // would snap to the *host's* midnight and shift every boundary by the offset.
+  const start = startOfDay(inAppZone(weekStart));
+
   const buckets: DayTotal[] = Array.from({ length: 7 }, (_, offset) => {
-    const date = new Date(weekStart);
-    date.setDate(date.getDate() + offset);
-    date.setHours(0, 0, 0, 0);
-    return { date, label: WEEKDAY_LABELS[date.getDay()], minutes: 0 };
+    const day = addDays(start, offset);
+    return {
+      date: new Date(day.getTime()),
+      label: format(day, "EEE"),
+      minutes: 0,
+    };
   });
 
   for (const session of sessions) {
-    const offset = differenceInCalendarDays(session.startedAt, buckets[0].date);
+    const offset = calendarDaysBetween(session.startedAt, buckets[0].date);
     if (offset < 0 || offset > 6) continue;
     buckets[offset].minutes += sessionMinutes(session);
   }
@@ -115,34 +124,27 @@ export function weeklyTrend(
   now: Date,
   weeks: number,
 ): WeeklyTrendPoint[] {
-  const currentWeekStart = startOfWeekLocal(now);
+  const currentWeekStart = inAppZone(weekRange(now).start);
 
   const points: WeeklyTrendPoint[] = Array.from({ length: weeks }, (_, i) => {
-    const weekStart = new Date(currentWeekStart);
-    weekStart.setDate(weekStart.getDate() - (weeks - 1 - i) * 7);
+    const weekStart = addDays(currentWeekStart, -(weeks - 1 - i) * 7);
     return {
-      weekStart,
-      label: `${weekStart.getDate()}/${weekStart.getMonth() + 1}`,
+      weekStart: new Date(weekStart.getTime()),
+      label: format(weekStart, "d/M"),
       minutes: 0,
     };
   });
 
   for (const session of sessions) {
-    const sessionWeek = startOfWeekLocal(session.startedAt);
+    // Both sides go through weekRange, so a session lands in a bucket only when
+    // it falls in that week on the student's calendar, not the host's.
+    const sessionWeek = weekRange(session.startedAt).start.getTime();
     const index = points.findIndex(
-      (point) => point.weekStart.getTime() === sessionWeek.getTime(),
+      (point) => point.weekStart.getTime() === sessionWeek,
     );
     if (index === -1) continue;
     points[index].minutes += sessionMinutes(session);
   }
 
   return points;
-}
-
-function startOfWeekLocal(date: Date): Date {
-  const result = new Date(date);
-  result.setHours(0, 0, 0, 0);
-  const shift = (result.getDay() - WEEK_STARTS_ON + 7) % 7;
-  result.setDate(result.getDate() - shift);
-  return result;
 }

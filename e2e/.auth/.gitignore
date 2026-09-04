@@ -1,0 +1,5 @@
+# Playwright writes a real signed session cookie here. Ignore everything in this
+# directory except this file — the rule has to travel with the repository, or a
+# fresh clone has nothing stopping the cookie being committed.
+*
+!.gitignore

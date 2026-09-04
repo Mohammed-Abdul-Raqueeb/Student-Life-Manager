@@ -1,6 +1,7 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
 
+import { AccountMenu } from "@/components/auth/account-menu";
 import { MobileNavDrawer, MobileTabBar } from "@/components/layout/mobile-nav";
 import { SidebarNav } from "@/components/layout/sidebar-nav";
 import { ThemeToggle } from "@/components/layout/theme-toggle";
@@ -38,7 +39,7 @@ export function AppShell({
             <Brand className="size-4.5" aria-hidden />
           </span>
           <span className="text-[0.9375rem] leading-tight font-semibold">
-            Student Life
+            Campivo
           </span>
         </div>
 
@@ -46,15 +47,9 @@ export function AppShell({
           <SidebarNav />
         </div>
 
-        <div className="border-t px-5 py-4">
-          <p className="truncate text-sm font-medium">{user.name}</p>
-          <p className="text-muted-foreground truncate text-xs">
-            {[user.settings.program, user.settings.semester]
-              .filter(Boolean)
-              .join(" · ") ||
-              user.settings.collegeName ||
-              "Set up your profile in Settings"}
-          </p>
+        {/* The signed-in student, and the way out. */}
+        <div className="border-t p-2">
+          <AccountMenu name={user.name} email={user.email} align="start" />
         </div>
       </aside>
 
@@ -69,7 +64,7 @@ export function AppShell({
             <span className="bg-primary text-primary-foreground grid size-7 place-items-center rounded-md">
               <Brand className="size-4" aria-hidden />
             </span>
-            <span className="text-sm">Student Life</span>
+            <span className="text-sm">Campivo</span>
           </Link>
 
           <TopBarTitle />

@@ -1,5 +1,6 @@
 "use client";
 
+import { addHours, set } from "date-fns";
 import { Pencil, Plus } from "lucide-react";
 import type { ReactNode } from "react";
 
@@ -13,7 +14,7 @@ import {
 import { FormDialog } from "@/components/shared/form-dialog";
 import { FieldRow, FormField } from "@/components/shared/form-field";
 import { Button } from "@/components/ui/button";
-import { formatDateInput, formatTimeInput } from "@/lib/date";
+import { formatDateInput, formatTimeInput, inAppZone } from "@/lib/date";
 import type { SubjectRef } from "@/lib/db/queries";
 
 export type StudySessionFormValues = {
@@ -182,13 +183,15 @@ export function StudySessionFormDialog({
 
 /** Defaults to the hour just gone — the common case is logging after the fact. */
 function defaultStart(): Date {
-  const date = new Date();
-  date.setHours(date.getHours() - 1, 0, 0, 0);
-  return date;
+  const onTheHour = set(inAppZone(new Date()), {
+    minutes: 0,
+    seconds: 0,
+    milliseconds: 0,
+  });
+  return new Date(addHours(onTheHour, -1).getTime());
 }
 
 function defaultEnd(start: Date): Date {
-  const date = new Date(start);
-  date.setHours(date.getHours() + 1);
-  return date;
+  // An hour later is an hour later in any zone, so this needs no zone at all.
+  return addHours(start, 1);
 }

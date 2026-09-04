@@ -1,4 +1,7 @@
+import { TZDate } from "@date-fns/tz";
 import { describe, expect, it } from "vitest";
+
+import { APP_TIME_ZONE } from "@/lib/date";
 
 import {
   goalCompletionPercent,
@@ -10,7 +13,32 @@ import {
   weeklyTrend,
 } from "./study";
 
-const at = (iso: string) => new Date(iso);
+/**
+ * A wall clock on the student's calendar: "2026-08-31T09:00:00" is 9am in
+ * Asia/Kolkata, whatever the machine running the tests thinks the time is.
+ *
+ * Spelling the zone out matters here. A bare `new Date("2026-09-02T20:00:00")`
+ * is parsed in the *host's* zone, so these fixtures quietly meant IST on a
+ * laptop in India and UTC in CI — and a session logged at 8pm Wednesday would
+ * land on Thursday in one and not the other.
+ */
+const at = (iso: string) => {
+  const [datePart, timePart = "00:00:00"] = iso.split("T");
+  const [year, month, day] = datePart.split("-").map(Number);
+  const [hours, minutes, seconds = 0] = timePart.split(":").map(Number);
+  return new Date(
+    new TZDate(
+      year,
+      month - 1,
+      day,
+      hours,
+      minutes,
+      seconds,
+      0,
+      APP_TIME_ZONE,
+    ).getTime(),
+  );
+};
 
 describe("sessionMinutes", () => {
   it("measures the gap between the two instants", () => {

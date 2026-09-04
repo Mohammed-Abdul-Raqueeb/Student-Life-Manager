@@ -1,8 +1,8 @@
-// Student Life Manager — relational schema.
+// Campivo — relational schema.
 //
-// Every record hangs off a User so multi-user auth can be added later without a
-// migration: leaf tables carry `userId` as well as `subjectId`, so ownership
-// filters never need a join. Derived numbers (attendance %, marks %, study
+// Every record hangs off a User: leaf tables carry `userId` as well as
+// `subjectId`, so ownership filters never need a join. That shape is what let
+// authentication land as an additive migration rather than a rewrite. Derived numbers (attendance %, marks %, study
 // duration) are deliberately NOT stored — they are computed from the records in
 // `src/lib/calculations`, so history can never disagree with the totals.
 
@@ -86,6 +86,17 @@ model User {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  // ── Authentication ─────────────────────────────────────────────────────────
+  // Added when login was introduced. `emailVerified` is required by the auth
+  // library's schema; Campivo does not send verification mail, so nothing gates
+  // on it yet. The password hash is NOT here — it lives on Account, which means
+  // a query that selects a whole User row can never leak it.
+  emailVerified Boolean @default(false)
+  image         String?
+
+  sessions Session[]
+  accounts Account[]
+
   settings          UserSettings?
   subjects          Subject[]
   assignments       Assignment[]
@@ -126,6 +137,75 @@ model UserSettings {
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@map("user_settings")
+}
+
+// ── Authentication ───────────────────────────────────────────────────────────
+//
+// Owned by the auth library (better-auth); the shapes below are its contract,
+// not a design of ours, so fields are present because it writes them rather
+// than because Campivo reads them. Every table cascades from User, so deleting
+// a student removes their credentials and sessions with the rest of their data.
+
+/// One row per active login. Deleting the row is what makes logging out real:
+/// the cookie that referenced it stops resolving everywhere at once, rather
+/// than merely being dropped by the browser that happened to hold it.
+model Session {
+  id        String   @id @default(cuid())
+  userId    String
+  token     String   @unique
+  expiresAt DateTime
+  ipAddress String?
+  userAgent String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+  @@map("sessions")
+}
+
+/// Credentials. For email/password there is one row per user with
+/// `providerId = "credential"` and `password` holding a scrypt hash — never a
+/// plaintext password, and never anything the client is allowed to select.
+/// The OAuth token columns are unused today and stay null.
+model Account {
+  id                    String    @id @default(cuid())
+  userId                String
+  accountId             String
+  providerId            String
+  issuer                String
+  password              String?
+  accessToken           String?
+  refreshToken          String?
+  idToken               String?
+  accessTokenExpiresAt  DateTime?
+  refreshTokenExpiresAt DateTime?
+  scope                 String?
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([providerId, accountId])
+  @@index([userId])
+  @@map("accounts")
+}
+
+/// Short-lived tokens the auth library issues. Unused while Campivo sends no
+/// mail, but the library expects the table to exist.
+model Verification {
+  id         String   @id @default(cuid())
+  identifier String
+  value      String
+  expiresAt  DateTime
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@index([identifier])
+  @@index([expiresAt])
+  @@map("verifications")
 }
 
 model Subject {
@@ -200,11 +280,11 @@ model Task {
 }
 
 model Exam {
-  id        String   @id @default(cuid())
-  userId    String
-  subjectId String
-  name      String
-  type      ExamType @default(QUIZ)
+  id              String   @id @default(cuid())
+  userId          String
+  subjectId       String
+  name            String
+  type            ExamType @default(QUIZ)
   /// Date and start time of the exam, as a single instant.
   examDate        DateTime
   durationMinutes Int?
@@ -223,14 +303,14 @@ model Exam {
 }
 
 model TimetableEntry {
-  id     String @id @default(cuid())
-  userId String
+  id        String  @id @default(cuid())
+  userId    String
   /// Null for entries not tied to a subject (self-study, a club, a commute).
   subjectId String?
   /// Label used when subjectId is null.
   title     String?
 
-  weekday Weekday
+  weekday    Weekday
   /// Wall-clock "HH:mm" — a weekly recurring slot has no calendar date.
   startTime  String
   endTime    String
@@ -250,13 +330,13 @@ model TimetableEntry {
 }
 
 model AttendanceRecord {
-  id        String @id @default(cuid())
+  id        String           @id @default(cuid())
   userId    String
   subjectId String
   /// Date-only: attendance is tracked per subject per day.
-  date   DateTime         @db.Date
-  status AttendanceStatus
-  note   String?
+  date      DateTime         @db.Date
+  status    AttendanceStatus
+  note      String?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -273,8 +353,8 @@ model AttendanceRecord {
 }
 
 model Note {
-  id     String @id @default(cuid())
-  userId String
+  id        String  @id @default(cuid())
+  userId    String
   /// Null for general notes that do not belong to a subject.
   subjectId String?
   title     String
@@ -300,8 +380,8 @@ model Assessment {
   marksObtained Float
   maxMarks      Float
   /// Share of the final subject grade, in percent. 0 means "not weighted".
-  weightage Float    @default(0)
-  date      DateTime @db.Date
+  weightage     Float          @default(0)
+  date          DateTime       @db.Date
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -315,7 +395,7 @@ model Assessment {
 }
 
 model StudySession {
-  id        String  @id @default(cuid())
+  id        String   @id @default(cuid())
   userId    String
   subjectId String
   topic     String?

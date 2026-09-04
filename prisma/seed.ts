@@ -16,9 +16,12 @@
  */
 
 import { PrismaPg } from "@prisma/adapter-pg";
+import { createLocalAccountIssuer } from "better-auth/db";
+import { addDays, format, set } from "date-fns";
 import "dotenv/config";
 
 import { PrismaClient } from "../src/generated/prisma/client.js";
+import { inAppZone } from "../src/lib/date.js";
 import type {
   AssessmentType,
   AssignmentStatus,
@@ -37,24 +40,39 @@ const prisma = new PrismaClient({
   adapter: new PrismaPg({ connectionString }),
 });
 
-const STUDENT_EMAIL = "student@studentlife.local";
+const STUDENT_EMAIL = "student@campivo.local";
+/**
+ * The demo account's password. A seed is for local development and a
+ * throwaway demo login, so this is deliberately fixed, obvious, and printed at
+ * the end of the run — it is not a secret and must never be treated as one.
+ * The seed refuses to run against production (see `main`).
+ */
+const STUDENT_PASSWORD = "campivo-demo-1234";
 
 // ── Date helpers, all relative to the moment the seed runs ───────────────────
 
+// Anchored to the app's calendar, not the machine running the seed. Otherwise a
+// seed run on a UTC box lays down data on UTC day boundaries that the app then
+// reads on IST ones, and the demo dashboard is a day out for no visible reason.
 const NOW = new Date();
 
+function seedDay(daysFromToday: number) {
+  return addDays(inAppZone(NOW), daysFromToday);
+}
+
 function atTime(daysFromToday: number, hours: number, minutes = 0): Date {
-  const date = new Date(NOW);
-  date.setDate(date.getDate() + daysFromToday);
-  date.setHours(hours, minutes, 0, 0);
-  return date;
+  const day = set(seedDay(daysFromToday), {
+    hours,
+    minutes,
+    seconds: 0,
+    milliseconds: 0,
+  });
+  return new Date(day.getTime());
 }
 
 /** UTC midnight, as Postgres `date` columns expect. */
 function calendarDate(daysFromToday: number): Date {
-  const date = new Date(NOW);
-  date.setDate(date.getDate() + daysFromToday);
-  return new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
+  return new Date(`${format(seedDay(daysFromToday), "yyyy-MM-dd")}T00:00:00.000Z`);
 }
 
 const WEEKDAYS: Weekday[] = [
@@ -68,14 +86,12 @@ const WEEKDAYS: Weekday[] = [
 ];
 
 function weekdayOf(daysFromToday: number): Weekday {
-  const date = new Date(NOW);
-  date.setDate(date.getDate() + daysFromToday);
-  return WEEKDAYS[date.getDay()];
+  return WEEKDAYS[seedDay(daysFromToday).getDay()];
 }
 
 /** Days back to the most recent Monday (0 if today is Monday). */
 function daysSinceMonday(): number {
-  return (NOW.getDay() + 6) % 7;
+  return (inAppZone(NOW).getDay() + 6) % 7;
 }
 
 // ── Subject definitions ──────────────────────────────────────────────────────
@@ -145,8 +161,53 @@ const SUBJECTS: SubjectSeed[] = [
   },
 ];
 
+/**
+ * Hash the demo password the same way the app does.
+ *
+ * better-auth owns the hashing scheme (scrypt with its own parameter choices),
+ * so the seed asks it rather than reimplementing it — otherwise a change to
+ * those parameters would silently make the demo login stop working.
+ */
+async function hashPassword(plain: string): Promise<string> {
+  const { hashPassword: hash } = await import("better-auth/crypto");
+  return hash(plain);
+}
+
+function assertNotProduction(): void {
+  if (process.env.SEED_ALLOW_REMOTE === "1") return;
+
+  const url = process.env.DATABASE_URL ?? "";
+  const host = (() => {
+    try {
+      return new URL(url).hostname;
+    } catch {
+      return "";
+    }
+  })();
+
+  const isLocal =
+    host === "localhost" || host === "127.0.0.1" || host === "::1";
+
+  if (!isLocal) {
+    throw new Error(
+      `Refusing to seed: DATABASE_URL points at "${host || "an unrecognised host"}", not localhost. ` +
+        "This seed deletes its user and everything that cascades from it. " +
+        "Set SEED_ALLOW_REMOTE=1 only if you are certain the target is disposable.",
+    );
+  }
+}
+
 async function main() {
-  console.log("Seeding Student Life Manager…");
+  console.log("Seeding Campivo…");
+
+  /*
+   * The seed deletes and recreates its user, which cascades to every record
+   * that user owns. That is exactly what makes it idempotent locally, and
+   * exactly what must never happen to a real deployment — so it refuses to run
+   * anywhere that looks like one. Opt out with SEED_ALLOW_REMOTE=1 if you
+   * genuinely mean it.
+   */
+  assertNotProduction();
 
   // Deleting the user cascades to everything else, so the seed is idempotent.
   await prisma.user.deleteMany({ where: { email: STUDENT_EMAIL } });
@@ -743,7 +804,21 @@ async function main() {
     studySessions: await prisma.studySession.count({ where: { userId } }),
   };
 
+  await prisma.account.create({
+    data: {
+      userId: user.id,
+      accountId: user.id,
+      providerId: "credential",
+      // The library owns this value and matches on it at sign-in. Hard-coding
+      // a plausible-looking string produces a row that looks right in the
+      // database and that sign-in silently cannot find.
+      issuer: createLocalAccountIssuer("credential"),
+      password: await hashPassword(STUDENT_PASSWORD),
+    },
+  });
+
   console.log(`Seeded ${user.name} <${user.email}>`);
+  console.log(`  log in with  ${STUDENT_EMAIL} / ${STUDENT_PASSWORD}`);
   for (const [label, count] of Object.entries(counts)) {
     console.log(`  ${label.padEnd(14)} ${count}`);
   }
