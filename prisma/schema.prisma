@@ -1,0 +1,338 @@
+// Student Life Manager — relational schema.
+//
+// Every record hangs off a User so multi-user auth can be added later without a
+// migration: leaf tables carry `userId` as well as `subjectId`, so ownership
+// filters never need a join. Derived numbers (attendance %, marks %, study
+// duration) are deliberately NOT stored — they are computed from the records in
+// `src/lib/calculations`, so history can never disagree with the totals.
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum Priority {
+  LOW
+  MEDIUM
+  HIGH
+}
+
+enum AssignmentStatus {
+  PENDING
+  IN_PROGRESS
+  COMPLETED
+}
+
+enum TaskStatus {
+  PENDING
+  COMPLETED
+}
+
+enum ExamType {
+  QUIZ
+  MIDTERM
+  FINAL
+  PRACTICAL
+  VIVA
+  OTHER
+}
+
+enum TimetableEntryType {
+  CLASS
+  LAB
+  STUDY
+  OTHER
+}
+
+enum Weekday {
+  MONDAY
+  TUESDAY
+  WEDNESDAY
+  THURSDAY
+  FRIDAY
+  SATURDAY
+  SUNDAY
+}
+
+enum AttendanceStatus {
+  PRESENT
+  ABSENT
+}
+
+enum AssessmentType {
+  ASSIGNMENT
+  QUIZ
+  MIDTERM
+  PROJECT
+  PRACTICAL
+  FINAL
+  OTHER
+}
+
+enum ThemePreference {
+  LIGHT
+  DARK
+  SYSTEM
+}
+
+model User {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  name      String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  settings          UserSettings?
+  subjects          Subject[]
+  assignments       Assignment[]
+  tasks             Task[]
+  exams             Exam[]
+  timetableEntries  TimetableEntry[]
+  attendanceRecords AttendanceRecord[]
+  notes             Note[]
+  assessments       Assessment[]
+  studySessions     StudySession[]
+
+  @@map("users")
+}
+
+model UserSettings {
+  id     String @id @default(cuid())
+  userId String @unique
+
+  // Profile
+  collegeName String?
+  program     String?
+  semester    String?
+
+  // Academic
+  attendanceTargetPercent Int @default(75)
+  weeklyStudyGoalMinutes  Int @default(900)
+
+  /// Ordered grade bands, highest first, e.g. [{ "grade": "A+", "minPercent": 90 }].
+  /// Configurable because grading scales are institution-specific.
+  gradingScale Json
+
+  // Appearance
+  theme ThemePreference @default(SYSTEM)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("user_settings")
+}
+
+model Subject {
+  id         String  @id @default(cuid())
+  userId     String
+  name       String
+  code       String
+  credits    Int     @default(3)
+  instructor String?
+  /// Accent token: one of the keys in SUBJECT_COLORS (src/lib/subject-colors.ts).
+  color      String  @default("indigo")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user              User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  assignments       Assignment[]
+  exams             Exam[]
+  timetableEntries  TimetableEntry[]
+  attendanceRecords AttendanceRecord[]
+  notes             Note[]
+  assessments       Assessment[]
+  studySessions     StudySession[]
+
+  @@unique([userId, code])
+  @@index([userId])
+  @@map("subjects")
+}
+
+model Assignment {
+  id            String           @id @default(cuid())
+  userId        String
+  subjectId     String
+  title         String
+  description   String?
+  dueDate       DateTime
+  priority      Priority         @default(MEDIUM)
+  status        AssignmentStatus @default(PENDING)
+  submissionUrl String?
+  completedAt   DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  subject Subject @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+
+  @@index([userId, dueDate])
+  @@index([userId, status])
+  @@index([subjectId])
+  @@map("assignments")
+}
+
+model Task {
+  id          String     @id @default(cuid())
+  userId      String
+  title       String
+  description String?
+  dueDate     DateTime?
+  priority    Priority   @default(MEDIUM)
+  status      TaskStatus @default(PENDING)
+  completedAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, dueDate])
+  @@index([userId, status])
+  @@map("tasks")
+}
+
+model Exam {
+  id        String   @id @default(cuid())
+  userId    String
+  subjectId String
+  name      String
+  type      ExamType @default(QUIZ)
+  /// Date and start time of the exam, as a single instant.
+  examDate        DateTime
+  durationMinutes Int?
+  location        String?
+  notes           String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  subject Subject @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+
+  @@index([userId, examDate])
+  @@index([subjectId])
+  @@map("exams")
+}
+
+model TimetableEntry {
+  id     String @id @default(cuid())
+  userId String
+  /// Null for entries not tied to a subject (self-study, a club, a commute).
+  subjectId String?
+  /// Label used when subjectId is null.
+  title     String?
+
+  weekday Weekday
+  /// Wall-clock "HH:mm" — a weekly recurring slot has no calendar date.
+  startTime  String
+  endTime    String
+  room       String?
+  instructor String?
+  type       TimetableEntryType @default(CLASS)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user    User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  subject Subject? @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+
+  @@index([userId, weekday])
+  @@index([subjectId])
+  @@map("timetable_entries")
+}
+
+model AttendanceRecord {
+  id        String @id @default(cuid())
+  userId    String
+  subjectId String
+  /// Date-only: attendance is tracked per subject per day.
+  date   DateTime         @db.Date
+  status AttendanceStatus
+  note   String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  subject Subject @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+
+  // One entry per subject per day, so marking "present" twice can never inflate
+  // the number of classes conducted.
+  @@unique([subjectId, date])
+  @@index([userId, date])
+  @@index([subjectId, date])
+  @@map("attendance_records")
+}
+
+model Note {
+  id     String @id @default(cuid())
+  userId String
+  /// Null for general notes that do not belong to a subject.
+  subjectId String?
+  title     String
+  content   String
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user    User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  subject Subject? @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+
+  @@index([userId, updatedAt])
+  @@index([subjectId])
+  @@map("notes")
+}
+
+model Assessment {
+  id            String         @id @default(cuid())
+  userId        String
+  subjectId     String
+  name          String
+  type          AssessmentType @default(ASSIGNMENT)
+  marksObtained Float
+  maxMarks      Float
+  /// Share of the final subject grade, in percent. 0 means "not weighted".
+  weightage Float    @default(0)
+  date      DateTime @db.Date
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  subject Subject @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+
+  @@index([userId, date])
+  @@index([subjectId])
+  @@map("assessments")
+}
+
+model StudySession {
+  id        String  @id @default(cuid())
+  userId    String
+  subjectId String
+  topic     String?
+  /// Start and end instants; duration is derived, never stored. Storing two
+  /// instants (rather than a date plus two clock times) makes sessions that
+  /// cross midnight fall out for free.
+  startedAt DateTime
+  endedAt   DateTime
+  notes     String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  subject Subject @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+
+  @@index([userId, startedAt])
+  @@index([subjectId, startedAt])
+  @@map("study_sessions")
+}

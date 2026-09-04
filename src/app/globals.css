@@ -1,0 +1,239 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+/* Keyframes and custom variants that the generated components in ui/ rely on.
+   Imported by relative path rather than as "shadcn/tailwind.css" (what the CLI
+   writes): Tailwind resolves CSS imports under the "style" export condition,
+   and shadcn 4.20's exports map declares that entry as a bare string with no
+   condition, so the package-name form fails to resolve. */
+@import "../../node_modules/shadcn/dist/tailwind.css";
+
+@custom-variant dark (&:is(.dark *));
+
+/*
+ * Student Life Manager — design tokens.
+ *
+ * Two colour systems, kept deliberately separate so they can never be confused:
+ *
+ *   1. Chrome (background, card, border, primary) is a quiet neutral with a
+ *      single indigo accent. Nothing in the shell competes with the data.
+ *   2. Status (success / warning / destructive / info) is the only place colour
+ *      carries meaning: healthy, approaching, overdue, informational. Every use
+ *      is paired with a text label or an icon, so colour is never the sole
+ *      signal.
+ *
+ * Subject accents live in src/lib/subject-colors.ts and use Tailwind's own
+ * palette — they identify a subject, they never indicate status.
+ */
+
+@theme inline {
+  --font-heading: var(--font-sans);
+  --font-sans: var(--font-sans);
+
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-success: var(--success);
+  --color-success-foreground: var(--success-foreground);
+  --color-warning: var(--warning);
+  --color-warning-foreground: var(--warning-foreground);
+  --color-info: var(--info);
+  --color-info-foreground: var(--info-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+
+  --radius-sm: calc(var(--radius) * 0.6);
+  --radius-md: calc(var(--radius) * 0.8);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) * 1.4);
+  --radius-2xl: calc(var(--radius) * 1.8);
+  --radius-3xl: calc(var(--radius) * 2.2);
+  --radius-4xl: calc(var(--radius) * 2.6);
+}
+
+:root {
+  --radius: 0.75rem;
+
+  /* A faintly cool off-white page with pure-white cards, so cards lift without
+     needing a heavy shadow. */
+  --background: oklch(0.985 0.003 264);
+  --foreground: oklch(0.21 0.02 264);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.21 0.02 264);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.21 0.02 264);
+
+  --primary: oklch(0.52 0.18 271);
+  --primary-foreground: oklch(0.99 0.005 264);
+  --secondary: oklch(0.968 0.006 264);
+  --secondary-foreground: oklch(0.3 0.025 264);
+  --muted: oklch(0.968 0.006 264);
+  --muted-foreground: oklch(0.53 0.02 264);
+  --accent: oklch(0.955 0.012 271);
+  --accent-foreground: oklch(0.36 0.09 271);
+
+  --destructive: oklch(0.58 0.21 25);
+  --destructive-foreground: oklch(0.99 0.005 264);
+  --success: oklch(0.55 0.13 152);
+  --success-foreground: oklch(0.99 0.005 264);
+  --warning: oklch(0.72 0.16 70);
+  --warning-foreground: oklch(0.24 0.05 70);
+  --info: oklch(0.58 0.14 240);
+  --info-foreground: oklch(0.99 0.005 264);
+
+  --border: oklch(0.918 0.008 264);
+  --input: oklch(0.918 0.008 264);
+  --ring: oklch(0.52 0.18 271);
+
+  /* Chart ramp: distinguishable by hue *and* lightness, so the series stay
+     separable in greyscale and for common colour-vision deficiencies. */
+  --chart-1: oklch(0.55 0.18 271);
+  --chart-2: oklch(0.68 0.13 195);
+  --chart-3: oklch(0.75 0.15 78);
+  --chart-4: oklch(0.62 0.17 340);
+  --chart-5: oklch(0.66 0.15 145);
+
+  --sidebar: oklch(1 0 0);
+  --sidebar-foreground: oklch(0.21 0.02 264);
+  --sidebar-primary: oklch(0.52 0.18 271);
+  --sidebar-primary-foreground: oklch(0.99 0.005 264);
+  --sidebar-accent: oklch(0.965 0.012 271);
+  --sidebar-accent-foreground: oklch(0.36 0.09 271);
+  --sidebar-border: oklch(0.925 0.008 264);
+  --sidebar-ring: oklch(0.52 0.18 271);
+}
+
+.dark {
+  --background: oklch(0.17 0.015 264);
+  --foreground: oklch(0.96 0.005 264);
+  --card: oklch(0.215 0.018 264);
+  --card-foreground: oklch(0.96 0.005 264);
+  --popover: oklch(0.225 0.018 264);
+  --popover-foreground: oklch(0.96 0.005 264);
+
+  --primary: oklch(0.68 0.16 271);
+  --primary-foreground: oklch(0.16 0.02 271);
+  --secondary: oklch(0.27 0.02 264);
+  --secondary-foreground: oklch(0.94 0.005 264);
+  --muted: oklch(0.27 0.02 264);
+  --muted-foreground: oklch(0.72 0.015 264);
+  --accent: oklch(0.3 0.035 271);
+  --accent-foreground: oklch(0.9 0.04 271);
+
+  --destructive: oklch(0.68 0.19 24);
+  --destructive-foreground: oklch(0.16 0.02 24);
+  --success: oklch(0.72 0.14 155);
+  --success-foreground: oklch(0.16 0.03 155);
+  --warning: oklch(0.8 0.15 75);
+  --warning-foreground: oklch(0.2 0.04 75);
+  --info: oklch(0.7 0.13 240);
+  --info-foreground: oklch(0.16 0.03 240);
+
+  --border: oklch(1 0 0 / 11%);
+  --input: oklch(1 0 0 / 15%);
+  --ring: oklch(0.68 0.16 271);
+
+  /* Stepped for the dark surface, not flipped from light: each value sits inside
+     the dark lightness band (L 0.48–0.67) and clears 3:1 against --card. */
+  --chart-1: oklch(0.62 0.17 271);
+  --chart-2: oklch(0.66 0.13 195);
+  --chart-3: oklch(0.665 0.14 78);
+  --chart-4: oklch(0.63 0.17 340);
+  --chart-5: oklch(0.65 0.15 145);
+
+  --sidebar: oklch(0.195 0.017 264);
+  --sidebar-foreground: oklch(0.96 0.005 264);
+  --sidebar-primary: oklch(0.68 0.16 271);
+  --sidebar-primary-foreground: oklch(0.16 0.02 271);
+  --sidebar-accent: oklch(0.29 0.032 271);
+  --sidebar-accent-foreground: oklch(0.9 0.04 271);
+  --sidebar-border: oklch(1 0 0 / 11%);
+  --sidebar-ring: oklch(0.68 0.16 271);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+
+  html {
+    @apply font-sans;
+    -webkit-text-size-adjust: 100%;
+  }
+
+  body {
+    @apply bg-background text-foreground antialiased;
+  }
+
+  /* A visible, consistent focus ring everywhere — keyboard users should never
+     have to guess where they are. */
+  :focus-visible {
+    @apply outline-ring outline-2 outline-offset-2;
+  }
+
+  h1,
+  h2,
+  h3 {
+    @apply tracking-tight;
+  }
+}
+
+@layer utilities {
+  /* Figures that sit in a column must not jiggle as digits change. */
+  .tabular {
+    font-variant-numeric: tabular-nums;
+    font-feature-settings: "tnum";
+  }
+
+  /* The small uppercase label above a statistic. */
+  .stat-label {
+    @apply text-muted-foreground text-xs font-medium tracking-wide uppercase;
+  }
+
+  /* Wide content (tables, the timetable grid) scrolls inside its own box so the
+     page body never scrolls sideways. */
+  .scroll-x {
+    @apply -mx-1 overflow-x-auto px-1;
+    scrollbar-width: thin;
+  }
+}
+
+/* Respect a reduced-motion preference: the UI is information, not decoration. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
