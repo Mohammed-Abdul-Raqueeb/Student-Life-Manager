@@ -21,7 +21,9 @@
     "typegen": "next typegen",
     "test:e2e": "playwright test",
     "db:create": "node scripts/create-local-db.mjs",
-    "auth:claim": "tsx scripts/claim-account.mts"
+    "auth:claim": "tsx scripts/claim-account.mts",
+    "demo:data": "tsx scripts/demo-data.mts",
+    "icons": "tsx scripts/generate-icons.mts"
   },
   "dependencies": {
     "@date-fns/tz": "^1.5.0",
